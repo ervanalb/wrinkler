@@ -5,7 +5,7 @@ import sys
 import shlex
 import argparse
 
-compressor_modes = ["lzma", "xz", "gzip", "bzip2"]
+compressor_modes = ["lzma", "xz", "gzip", "bzip2", "zstd"]
 data_modes = ["printf", "tail"]
 
 interpreters = {
@@ -13,8 +13,8 @@ interpreters = {
     "python": "|python",
     "python2": "|python2",
     "python3": "|python3",
-    "bin": ">a;/lib/ld*o ./a",   # smol
-    "bin2": ">a;chmod +x a;./a", # 2 bytes larger but probably more robust
+    "bin":  ">a;/lib/ld*o ./a", # smol
+    "bin2": ">a;chmod +x a;./a", # 1 bytes larger but probably more robust
 }
 
 def main():
@@ -22,6 +22,8 @@ def main():
     parser.add_argument('-i', '--input', help='Input file to compress')
     parser.add_argument('-o', '--output', help='Output file to compress')
     parser.add_argument('-p', '--interpreter', default="sh", help='Interpreter to use ({})'.format(", ".join(interpreters)))
+    parser.add_argument('--zip', dest='zip_filter', help='Compression mode to use ({})'.format(", ".join(compressor_modes)))
+    parser.add_argument('--data', dest='data_filter', help='Data mode to use ({})'.format(", ".join(data_modes)))
     args = parser.parse_args()
 
     if args.input is None:
@@ -29,7 +31,7 @@ def main():
     else:
         in_data = open(args.input, "rb").read()
 
-    out_data = best_compression(in_data, interpreter=interpreters.get(args.interpreter, args.interpreter))
+    out_data = best_compression(in_data, interpreter=interpreters.get(args.interpreter, args.interpreter), zip_filter=args.zip_filter, data_filter=args.data_filter)
 
     if args.output is None:
         print("No output file specified, dry run finished.")
@@ -48,8 +50,11 @@ def replace_with_octal(cd, char):
     cd = cd.replace(char, b'\\' + o)
     return cd
 
-def best_compression(input_binary, *args, **kwargs):
+def best_compression(input_binary, *args, zip_filter=None, data_filter=None, **kwargs):
     modes = [("null", "null")] + [(zip_mode, data_mode) for zip_mode in compressor_modes for data_mode in data_modes]
+    modes = [(zip_mode, data_mode) for (zip_mode, data_mode) in modes
+             if (zip_filter is None or zip_mode == zip_filter) and (data_filter is None or data_mode == data_filter)]
+
     results = [compress(input_binary, *mode, *args, **kwargs)
         for mode in modes]
     for mode, result in zip(modes, results):
@@ -68,6 +73,7 @@ def compress(input_binary, zip_method="lzma9", data_method="printf", interpreter
         "xz": ("xz -F xz -cze9", "|unxz"),
         "gzip": ("gzip -9", "|zcat"),
         "bzip2": ("bzip2 -9", "|bzcat"),
+        "zstd": ("zstd -19", "|unzstd"),
     }
     (compressor, decompressor) = zip_methods[zip_method]
 
@@ -83,7 +89,7 @@ def compress(input_binary, zip_method="lzma9", data_method="printf", interpreter
         cd = replace_with_octal(cd, b"'")
         return b"printf '" + cd + b"'" + bytes(decompressor, encoding='latin1') + bytes(interpreter, encoding='latin1')
     elif data_method == "tail":
-        return b"tail -n+2 $0" + bytes(decompressor, encoding='latin1') + bytes(interpreter, encoding='latin1') + b";exit\n" + cd
+        return b"tail +2 $0" + bytes(decompressor, encoding='latin1') + bytes(interpreter, encoding='latin1') + b";exit\n" + cd
     else:
         raise ValueError("Unknown data method")
 
