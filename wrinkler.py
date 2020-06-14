@@ -5,7 +5,7 @@ import sys
 import shlex
 import argparse
 
-compressor_modes = ["lzma", "xz", "gzip", "bzip2", "zstd"]
+compressor_modes = ["lzma", "xz", "gzip", "bzip2", "megalania"] # removed zstd
 data_modes = ["printf", "tail"]
 
 interpreters = {
@@ -74,6 +74,7 @@ def compress(input_binary, zip_method="lzma9", data_method="printf", interpreter
         "gzip": ("gzip -9", "|zcat"),
         "bzip2": ("bzip2 -9", "|bzcat"),
         "zstd": ("zstd -19", "|unzstd"),
+        "megalania": ("cat >mega_input && megalania mega_input 2>/dev/null && rm mega_input", "|unxz"),
     }
     (compressor, decompressor) = zip_methods[zip_method]
 
